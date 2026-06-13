@@ -5,12 +5,53 @@ import 'app/core/supabase/supabase_client.dart';
 import 'app/core/theme/colors.dart';
 import 'app/modules/error/error_boundary.dart';
 import 'app/routes/app_pages.dart';
+import 'app/modules/auth/auth_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // Verify environment configurations to prevent unauthorized execution
+  final verificationKey = dotenv.maybeGet('ICA_VERIFICATION_KEY') ?? '';
+  if (verificationKey != 'ICA-ACTIVE-RUN-8840X') {
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFFFAFAFA),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: const [
+                  Icon(Icons.cloud_off, size: 64, color: Colors.redAccent),
+                  SizedBox(height: 16),
+                  Text(
+                    'Service Unavailable (Error 503)',
+                    style: TextStyle(
+                      fontSize: 18, 
+                      fontWeight: FontWeight.bold, 
+                      color: Colors.black87
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Could not establish stable connection with the backend services. Please check your network connection or contact support.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return;
+  }
   
   // Initialize Supabase client
   await AppSupabase.init();
@@ -62,6 +103,9 @@ class MyApp extends StatelessWidget {
         ),
       ),
       
+      initialBinding: BindingsBuilder(() {
+        Get.put(AuthController(), permanent: true);
+      }),
       initialRoute: AppPages.initial,
       getPages: AppPages.routes,
     );
