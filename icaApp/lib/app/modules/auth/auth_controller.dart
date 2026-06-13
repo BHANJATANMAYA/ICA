@@ -16,12 +16,15 @@ class AuthController extends GetxController {
     // Listen to auth state changes
     _client.auth.onAuthStateChange.listen((data) {
       currentUser.value = data.session?.user;
+      final current = Get.currentRoute;
       if (data.session == null) {
-        if (Get.currentRoute != AppRoutes.login && Get.currentRoute != AppRoutes.signup) {
+        // Only redirect to login if we are not already on login/signup and not in startup sequence
+        if (current.isNotEmpty && current != '/' && current != AppRoutes.login) {
           Get.offAllNamed(AppRoutes.login);
         }
       } else {
-        if (Get.currentRoute == AppRoutes.login || Get.currentRoute == AppRoutes.signup) {
+        // Redirect to dashboard if we are on login/signup or startup
+        if (current == AppRoutes.login || current == '/' || current == '') {
           Get.offAllNamed(AppRoutes.dashboard);
         }
       }
@@ -37,34 +40,6 @@ class AuthController extends GetxController {
       );
       if (response.user != null) {
         Get.offAllNamed(AppRoutes.dashboard);
-      }
-    } catch (e) {
-      Get.snackbar('Error', e.toString());
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  Future<void> signup(String email, String password, String name, String? phone) async {
-    try {
-      isLoading.value = true;
-      // SignUp
-      final response = await _client.auth.signUp(
-        email: email,
-        password: password,
-      );
-      
-      final user = response.user;
-      if (user != null) {
-        // Insert into public.parents
-        await _client.from('parents').insert({
-          'auth_user_id': user.id,
-          'name': name,
-          'email': email,
-          'phone': phone,
-        });
-        Get.snackbar('Success', 'Signup successful! Please confirm your email.');
-        Get.offAllNamed(AppRoutes.login);
       }
     } catch (e) {
       Get.snackbar('Error', e.toString());

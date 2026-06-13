@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../core/theme/colors.dart';
 import '../../core/theme/typography.dart';
-import '../../routes/app_routes.dart';
 import 'auth_controller.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -56,6 +55,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Center(
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        height: 100,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.emoji_events, size: 60, color: AppColors.chessGold),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     const Text(
                       'Indian Chess Academy',
                       style: AppTypography.screenTitle,
@@ -179,19 +187,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 style: AppTypography.buttonText,
                               ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    OutlinedButton(
-                      onPressed: () => Get.toNamed(AppRoutes.signup),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.deepNavy,
-                        side: const BorderSide(color: AppColors.deepNavy),
-                        minimumSize: const Size(double.infinity, 48),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('Create New Account'),
                     ),
                   ],
                 ),
