@@ -130,7 +130,7 @@ export default function DashboardPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "schedules" },
-        (payload) => {
+        (payload: any) => {
           const eventType = payload.eventType;
           const targetRow = (payload.new && Object.keys(payload.new).length > 0 ? payload.new : payload.old) as any;
           
@@ -146,7 +146,7 @@ export default function DashboardPage() {
         }
       );
 
-    channel.subscribe((status) => {
+    channel.subscribe((status: any) => {
       if (status === "SUBSCRIBED") {
         setRealtimeConnected(true);
       } else {

@@ -267,9 +267,9 @@ CREATE POLICY "Admins have full access to notifications" ON public.notifications
 CREATE POLICY "Allow public inserts to trial_requests" ON public.trial_requests FOR INSERT TO authenticated, anon WITH CHECK (true);
 
 -- ------------------------------------------
--- Commented Placeholder Policies for Parent Access (Mobile App)
+-- Active Policies for Parent Access (Mobile App)
 -- ------------------------------------------
-/*
+
 -- 1. Parents can read and update their own profile
 CREATE POLICY "Parents read/update own profile" ON public.parents
   FOR ALL TO authenticated
@@ -377,7 +377,36 @@ CREATE POLICY "Parents read student subscriptions" ON public.subscriptions
 CREATE POLICY "Parents read own notifications" ON public.notifications
   FOR SELECT TO authenticated
   USING (target_parent_id = public.get_parent_id());
-*/
+
+-- 13. Automatic Trigger Function to link Auth users to Pre-Created Parents
+CREATE OR REPLACE FUNCTION public.handle_new_parent_signup()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Check if a parent record already exists with the same email
+  IF EXISTS (SELECT 1 FROM public.parents WHERE email = NEW.email) THEN
+    -- Link the newly created auth user's ID
+    UPDATE public.parents
+    SET auth_user_id = NEW.id
+    WHERE email = NEW.email;
+  ELSE
+    -- Optionally, auto-create a parent profile for direct self-signup
+    INSERT INTO public.parents (auth_user_id, name, email)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+      NEW.email
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Bind the trigger function to the auth.users table
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_parent_signup();
+
 
 -- ==========================================
 -- REALTIME ENABLEMENT

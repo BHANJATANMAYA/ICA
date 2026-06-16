@@ -139,7 +139,7 @@ export default function ChatPollsPage() {
         .order("created_at", { ascending: false });
 
       // Fetch all votes for these polls to compute counts
-      const pollIds = (pollsData || []).map((p) => p.id);
+      const pollIds = (pollsData || []).map((p: any) => p.id);
       let votesData: PollVote[] = [];
       if (pollIds.length > 0) {
         const { data: votes } = await supabase
@@ -191,7 +191,7 @@ export default function ChatPollsPage() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "group_messages", filter: `batch_id=eq.${selectedBatch}` },
-        (payload) => {
+        (payload: any) => {
           setMessages((prev) => [...prev, payload.new as Message]);
         }
       )
