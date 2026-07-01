@@ -94,3 +94,33 @@ To ensure live updates between the web admin panel and the mobile app:
 - Listen to **`schedules`** changes on the channel for class rescheduling alerts.
 - Listen to **`group_messages`** for active chat rooms.
 - Listen to **`poll_votes`** to show live voting results.
+
+---
+
+## Round 2 Additions
+
+This workspace has been extended to support the security and geofencing modules in Round 2:
+
+### 1. Database Migrations (Round 2)
+1. Go to the **SQL Editor** in your Supabase Console.
+2. Paste and run the contents of [supabase/migrations/20260620_round2.sql](file:///x:/X/ICA/icaWeb/supabase/migrations/20260620_round2.sql) to add column modifications, RLS policies, new database logs, and configuration setups.
+
+### 2. Push Notifications Setup (FCM HTTP v1)
+To support server-side push notifications dispatch, configure these variables in your `.env.local` file:
+```env
+FCM_PROJECT_ID=your-firebase-project-id
+FCM_CLIENT_EMAIL=your-service-account-client-email
+FCM_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYOUR-PRIVATE-KEY-BODY\n-----END PRIVATE KEY-----\n"
+```
+*Note: If these variables are not configured in `.env.local`, the server will fall back to **Simulated Mode**, logging dispatches and returning simulated successes to ensure front-end flows can be evaluated without blocking.*
+
+The dispatch route is defined at `/api/dispatch-notification` and performs server-to-server HTTP v1 requests using Google OAuth2.
+
+### 3. Geofencing Settings & Logs
+- **Configuration**: Batches & Schedules now has a "Geofence Settings" tab. Administrators can configure the coordinates (`geofence_lat`, `geofence_lng`) and checking range (`geofence_radius_meters`). Default coordinates are set to **Parul University Vadodara** (`22.2678`, `73.1433`, `200m`).
+- **Audit Logs**: The Attendance sheet now contains a "Geofence Logs" tab. This page captures enter/exit coordinate logs from student mobile check-ins and maps status badges. 
+- **Verification**: Student records in the Class-by-Class mark grid display a Chess Gold Location Pin if their attendance log is geofenced-verified (`geofence_verified = true`).
+
+### 4. Realtime CDC Status proofs
+The Group Chat page has an evaluator-facing status panel. This panel hooks into Supabase CDC channels to verify websocket connections are active for the live tables (`group_messages`, `poll_votes`, `notifications`, `study_materials`, `schedules`).
+
