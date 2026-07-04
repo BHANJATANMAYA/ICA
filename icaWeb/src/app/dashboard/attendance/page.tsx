@@ -12,6 +12,9 @@ import {
   ChevronUp,
   Percent,
   SlidersHorizontal,
+  MapPin,
+  Search,
+  Filter,
 } from "lucide-react";
 
 interface Batch {
@@ -33,6 +36,21 @@ interface AttendanceRecord {
   student_id: string;
   class_date: string;
   status: "present" | "absent";
+  geofence_verified?: boolean;
+}
+
+interface GeofenceLog {
+  id: string;
+  student_id: string;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  event_type: "enter" | "exit";
+  timestamp: string;
+  students: {
+    name: string;
+    batch_id: string;
+  } | null;
 }
 
 export default function AttendancePage() {
@@ -43,7 +61,13 @@ export default function AttendancePage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"grid" | "rollup">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "rollup" | "geofence_logs">("grid");
+  const [geofenceLogs, setGeofenceLogs] = useState<GeofenceLog[]>([]);
+
+  // Geofence Logs Filter States
+  const [logStudentFilter, setLogStudentFilter] = useState("all");
+  const [logStartDate, setLogStartDate] = useState("");
+  const [logEndDate, setLogEndDate] = useState("");
 
   // Load batches on component mount
   useEffect(() => {
@@ -93,13 +117,31 @@ export default function AttendancePage() {
         // 3. Load attendance logs for this batch
         const { data: attendanceData } = await supabase
           .from("attendance_records")
-          .select("student_id, class_date, status")
+          .select("student_id, class_date, status, geofence_verified")
           .eq("batch_id", selectedBatch);
 
         setStudents(studentData || []);
         // Sort schedules chronologically for table column headers (left-to-right)
         setSchedules((scheduleData || []).reverse());
         setAttendance((attendanceData as any[]) || []);
+
+        // 4. Fetch Geofence Logs
+        const { data: logsData } = await supabase
+          .from("geofence_logs")
+          .select(`
+            id,
+            student_id,
+            lat,
+            lng,
+            accuracy,
+            event_type,
+            timestamp,
+            students:student_id ( name, batch_id )
+          `)
+          .order("timestamp", { ascending: false });
+
+        const batchLogs = (logsData || []).filter((log: any) => log.students?.batch_id === selectedBatch);
+        setGeofenceLogs(batchLogs as any[]);
       } catch (err) {
         console.error("Error loading batch attendance data:", err);
       } finally {
@@ -251,6 +293,17 @@ export default function AttendancePage() {
           <Percent className="w-4 h-4" />
           <span>Monthly Analytics Rollup</span>
         </button>
+        <button
+          onClick={() => setViewMode("geofence_logs")}
+          className={`px-6 py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            viewMode === "geofence_logs"
+              ? "border-gold text-gold font-bold"
+              : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+        >
+          <MapPin className="w-4 h-4" />
+          <span>Geofence Logs</span>
+        </button>
       </div>
 
       {loading ? (
@@ -303,22 +356,34 @@ export default function AttendancePage() {
                               (a) => a.student_id === student.id && a.class_date === sch.class_date
                             );
                             const status = record?.status;
+                            const isVerified = record?.geofence_verified;
 
                             return (
                               <td key={sch.id} className="p-3 text-center border-r border-slate-100">
-                                <button
-                                  onClick={() => handleToggleAttendance(student.id, sch.class_date, status)}
-                                  className={`w-12 h-8 rounded-lg font-bold text-xs transition-all duration-150 border active:scale-95 shadow-sm inline-flex items-center justify-center ${
-                                    status === "present"
-                                      ? "bg-success text-white border-success"
-                                      : status === "absent"
-                                      ? "bg-destructive text-white border-destructive"
-                                      : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100"
-                                  }`}
-                                  title="Click to toggle: Unmarked -> Present -> Absent -> Unmarked"
-                                >
-                                  {status === "present" ? "P" : status === "absent" ? "A" : "—"}
-                                </button>
+                                <div className="inline-flex flex-col items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleToggleAttendance(student.id, sch.class_date, status)}
+                                    className={`w-12 h-8 rounded-lg font-bold text-xs transition-all duration-150 border active:scale-95 shadow-sm inline-flex items-center justify-center ${
+                                      status === "present"
+                                        ? "bg-success text-white border-success"
+                                        : status === "absent"
+                                        ? "bg-destructive text-white border-destructive"
+                                        : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100"
+                                    }`}
+                                    title="Click to toggle: Unmarked -> Present -> Absent -> Unmarked"
+                                  >
+                                    {status === "present" ? "P" : status === "absent" ? "A" : "—"}
+                                  </button>
+                                  <div className="h-4 flex items-center justify-center">
+                                    {isVerified ? (
+                                      <div title="Geofence Verified">
+                                        <MapPin className="w-3.5 h-3.5 text-gold fill-gold/25" />
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-300 font-bold">—</span>
+                                    )}
+                                  </div>
+                                </div>
                               </td>
                             );
                           })}
@@ -387,6 +452,140 @@ export default function AttendancePage() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* TAB 3: GEOFENCE LOGS */}
+          {viewMode === "geofence_logs" && (
+            <div className="space-y-6">
+              {/* Geofence Logs Filter panel */}
+              <div className="bg-white p-4 rounded-[12px] border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+                  {/* Filter Student */}
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs font-bold text-navy uppercase tracking-wider">Student:</span>
+                    <select
+                      value={logStudentFilter}
+                      onChange={(e) => setLogStudentFilter(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold cursor-pointer"
+                    >
+                      <option value="all">All Students</option>
+                      {students.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Date range filters */}
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs font-bold text-navy uppercase tracking-wider">From:</span>
+                    <input
+                      type="date"
+                      value={logStartDate}
+                      onChange={(e) => setLogStartDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg py-1 px-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-navy uppercase tracking-wider">To:</span>
+                    <input
+                      type="date"
+                      value={logEndDate}
+                      onChange={(e) => setLogEndDate(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-lg py-1 px-2.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setLogStudentFilter("all");
+                    setLogStartDate("");
+                    setLogEndDate("");
+                  }}
+                  className="text-xs font-bold text-gold hover:underline"
+                >
+                  Clear Filters
+                </button>
+              </div>
+
+              {/* Logs Table */}
+              <div className="bg-white rounded-[12px] border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-navy text-white text-[12px] font-bold tracking-wider uppercase border-b border-slate-700">
+                        <th className="py-4 px-6">Student Name</th>
+                        <th className="py-4 px-6 text-center">Event Type</th>
+                        <th className="py-4 px-6 text-center">Coordinates (Lat, Lng)</th>
+                        <th className="py-4 px-6 text-center">Accuracy (Meters)</th>
+                        <th className="py-4 px-6 text-right">Event Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-[13px] font-semibold text-slate-700">
+                      {(() => {
+                        const filteredLogs = geofenceLogs.filter((log) => {
+                          if (logStudentFilter !== "all" && log.student_id !== logStudentFilter) return false;
+                          if (logStartDate && new Date(log.timestamp) < new Date(logStartDate)) return false;
+                          if (logEndDate) {
+                            const endDateTime = new Date(logEndDate);
+                            endDateTime.setHours(23, 59, 59, 999);
+                            if (new Date(log.timestamp) > endDateTime) return false;
+                          }
+                          return true;
+                        });
+
+                        if (filteredLogs.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={5} className="py-12 text-center text-slate-450 font-medium">
+                                No geofence event logs found matching the filter criteria.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return filteredLogs.map((log) => {
+                          const isEnter = log.event_type === "enter";
+
+                          return (
+                            <tr key={log.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="py-4 px-6 font-bold text-navy">
+                                {log.students?.name || "Deleted Student"}
+                              </td>
+                              <td className="py-4 px-6 text-center">
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                                  isEnter ? "bg-emerald-100 text-success" : "bg-amber-100 text-[#8F6516]"
+                                }`}>
+                                  <MapPin className="w-3 h-3" />
+                                  <span>{isEnter ? "Enter" : "Exit"}</span>
+                                </span>
+                              </td>
+                              <td className="py-4 px-6 text-center font-medium text-slate-550">
+                                {log.lat.toFixed(6)}, {log.lng.toFixed(6)}
+                              </td>
+                              <td className="py-4 px-6 text-center font-medium text-slate-550">
+                                {log.accuracy ? `${log.accuracy.toFixed(1)}m` : "N/A"}
+                              </td>
+                              <td className="py-4 px-6 text-right text-slate-500 font-medium">
+                                <span className="block">{new Date(log.timestamp).toLocaleDateString()}</span>
+                                <span className="block text-[11px] text-slate-400 mt-0.5">
+                                  {new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </>

@@ -16,6 +16,7 @@ import {
   UserCheck,
   LogOut,
   User,
+  Bell,
 } from "lucide-react";
 
 interface NavItem {
@@ -33,6 +34,7 @@ const navItems: NavItem[] = [
   { name: "Study Materials", href: "/dashboard/materials", icon: BookOpen },
   { name: "Assignments & Subs", href: "/dashboard/assignments", icon: FileText },
   { name: "Group Chat & Polls", href: "/dashboard/chat-polls", icon: MessageSquare },
+  { name: "Push Notifications", href: "/dashboard/notifications", icon: Bell },
   { name: "Trial Requests", href: "/dashboard/trials", icon: UserCheck },
 ];
 

@@ -15,6 +15,8 @@ import {
   AlertCircle,
   Layers,
   ChevronRight,
+  MapPin,
+  Save,
 } from "lucide-react";
 
 interface Batch {
@@ -38,11 +40,18 @@ export default function BatchesSchedulesPage() {
   const supabase = createClient();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
-  const [activeTab, setActiveTab] = useState<"schedules" | "batches">("schedules");
+  const [activeTab, setActiveTab] = useState<"schedules" | "batches" | "geofence">("schedules");
   const [loading, setLoading] = useState(true);
 
   // Filter state
   const [selectedBatchFilter, setSelectedBatchFilter] = useState<string>("all");
+
+  // Geofence Config State
+  const [geofenceLat, setGeofenceLat] = useState("22.2678");
+  const [geofenceLng, setGeofenceLng] = useState("73.1433");
+  const [geofenceRadius, setGeofenceRadius] = useState("200");
+  const [savingGeofence, setSavingGeofence] = useState(false);
+  const [geofenceStatus, setGeofenceStatus] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Modals / Form States
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -79,10 +88,61 @@ export default function BatchesSchedulesPage() {
         .order("class_date", { ascending: false })
         .order("start_time", { ascending: true });
       setSchedules((schedulesData as any[]) || []);
+
+      // Fetch academy geofence config
+      const { data: configData } = await supabase
+        .from("academy_config")
+        .select("key, value");
+      
+      if (configData && configData.length > 0) {
+        configData.forEach((item) => {
+          if (item.key === "geofence_lat") setGeofenceLat(item.value);
+          if (item.key === "geofence_lng") setGeofenceLng(item.value);
+          if (item.key === "geofence_radius_meters") setGeofenceRadius(item.value);
+        });
+      }
     } catch (err) {
       console.error("Error fetching batches/schedules data:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveGeofence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGeofence(true);
+    setGeofenceStatus(null);
+
+    try {
+      const latVal = parseFloat(geofenceLat);
+      const lngVal = parseFloat(geofenceLng);
+      const radVal = parseFloat(geofenceRadius);
+
+      if (isNaN(latVal) || latVal < -90 || latVal > 90) {
+        throw new Error("Latitude must be a valid number between -90 and 90.");
+      }
+      if (isNaN(lngVal) || lngVal < -180 || lngVal > 180) {
+        throw new Error("Longitude must be a valid number between -180 and 180.");
+      }
+      if (isNaN(radVal) || radVal <= 0) {
+        throw new Error("Radius must be a valid positive number.");
+      }
+
+      const updates = [
+        { key: "geofence_lat", value: geofenceLat, updated_at: new Date().toISOString() },
+        { key: "geofence_lng", value: geofenceLng, updated_at: new Date().toISOString() },
+        { key: "geofence_radius_meters", value: geofenceRadius, updated_at: new Date().toISOString() },
+      ];
+
+      const { error } = await supabase.from("academy_config").upsert(updates, { onConflict: "key" });
+      if (error) throw error;
+
+      setGeofenceStatus({ type: "success", text: "Academy geofence settings saved successfully!" });
+    } catch (err: any) {
+      console.error(err);
+      setGeofenceStatus({ type: "error", text: err.message || "Failed to save geofence configuration." });
+    } finally {
+      setSavingGeofence(false);
     }
   };
 
@@ -236,7 +296,7 @@ export default function BatchesSchedulesPage() {
         </div>
 
         <div className="flex gap-3">
-          {activeTab === "schedules" ? (
+          {activeTab === "schedules" && (
             <button
               onClick={() => {
                 setCurrentSchedule({
@@ -253,7 +313,8 @@ export default function BatchesSchedulesPage() {
               <Plus className="w-4 h-4" strokeWidth={2.5} />
               <span>Schedule Class</span>
             </button>
-          ) : (
+          )}
+          {activeTab === "batches" && (
             <button
               onClick={() => {
                 setCurrentBatch({ name: "", description: "", default_timing: "" });
@@ -291,6 +352,17 @@ export default function BatchesSchedulesPage() {
         >
           <Layers className="w-4.5 h-4.5" />
           <span>Cohorts (Batches)</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("geofence")}
+          className={`px-6 py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === "geofence"
+              ? "border-gold text-gold font-bold"
+              : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+        >
+          <MapPin className="w-4.5 h-4.5" />
+          <span>Geofence Settings</span>
         </button>
       </div>
 
@@ -454,6 +526,137 @@ export default function BatchesSchedulesPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* Tab Contents: Geofence Settings */}
+      {activeTab === "geofence" && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+          {/* Left panel: Config Inputs */}
+          <div className="lg:col-span-5 bg-white p-6 rounded-[12px] border border-slate-100 shadow-sm self-start">
+            <div className="flex items-center gap-2 mb-6">
+              <MapPin className="w-5 h-5 text-gold" />
+              <h2 className="text-base font-bold text-navy uppercase tracking-wide">Coordinates & Perimeter</h2>
+            </div>
+
+            <form onSubmit={handleSaveGeofence} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider block">Latitude (Decimal Degrees) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 22.2678"
+                  value={geofenceLat}
+                  onChange={(e) => setGeofenceLat(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider block">Longitude (Decimal Degrees) *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 73.1433"
+                  value={geofenceLng}
+                  onChange={(e) => setGeofenceLng(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold font-semibold text-slate-800"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-navy uppercase tracking-wider block">Radius (Meters) *</label>
+                <input
+                  type="number"
+                  required
+                  min="10"
+                  placeholder="200"
+                  value={geofenceRadius}
+                  onChange={(e) => setGeofenceRadius(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm placeholder-slate-450 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold font-semibold text-slate-800"
+                />
+              </div>
+
+              {geofenceStatus && (
+                <div className={`p-3 rounded-lg border text-xs font-semibold flex items-center gap-2 ${
+                  geofenceStatus.type === "success" 
+                    ? "bg-emerald-50 border-emerald-250 text-success" 
+                    : "bg-rose-50 border-rose-250 text-destructive"
+                }`}>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{geofenceStatus.text}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={savingGeofence}
+                className="w-full h-[48px] bg-gold hover:bg-[#B78120] text-white font-bold rounded-[8px] flex items-center justify-center gap-2 shadow transition-all duration-150 active:scale-[0.98] disabled:opacity-70"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingGeofence ? "Saving perimeter..." : "Save Config Settings"}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Right panel: Premium visual preview */}
+          <div className="lg:col-span-7 bg-white p-6 rounded-[12px] border border-slate-100 shadow-sm flex flex-col justify-between">
+            <div>
+              <h2 className="text-base font-bold text-navy uppercase tracking-wide mb-2">Geofence Perimeter Preview</h2>
+              <p className="text-xs text-slate-550 mb-6">Visual model of the active security zone configured for mobile student check-ins.</p>
+
+              {/* Styled Interactive SVG Map Mockup */}
+              <div className="relative w-full h-[280px] bg-slate-900/5 rounded-xl border border-slate-100 flex items-center justify-center overflow-hidden">
+                {/* Simulated grid lines */}
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:24px_24px] opacity-40"></div>
+                
+                {/* Center marker & Radius circle */}
+                <div className="relative flex items-center justify-center">
+                  {/* Outer fence radius limit with pulse animation */}
+                  <div 
+                    className="absolute rounded-full bg-gold/10 border-2 border-dashed border-gold/40 flex items-center justify-center animate-pulse"
+                    style={{
+                      width: `${Math.min(220, Math.max(80, parseInt(geofenceRadius) || 100))}px`,
+                      height: `${Math.min(220, Math.max(80, parseInt(geofenceRadius) || 100))}px`
+                    }}
+                  ></div>
+                  
+                  {/* Active range border */}
+                  <div 
+                    className="absolute rounded-full bg-gold/5 border border-gold/20"
+                    style={{
+                      width: `${Math.min(220, Math.max(80, parseInt(geofenceRadius) || 100)) - 10}px`,
+                      height: `${Math.min(220, Math.max(80, parseInt(geofenceRadius) || 100)) - 10}px`
+                    }}
+                  ></div>
+
+                  {/* Chess Academy Dot (Parul University Vadodara center) */}
+                  <div className="z-10 w-4 h-4 bg-navy rounded-full border-2 border-white flex items-center justify-center shadow-lg relative">
+                    <span className="absolute -top-6 text-[10px] font-extrabold uppercase tracking-wide bg-navy text-white px-2 py-0.5 rounded shadow whitespace-nowrap">
+                      ICA Academy
+                    </span>
+                    <div className="w-1.5 h-1.5 bg-gold rounded-full"></div>
+                  </div>
+                </div>
+
+                {/* Coordinates info box overlay */}
+                <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur px-3 py-2 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-750 flex flex-col shadow-sm gap-0.5">
+                  <span>LAT: {geofenceLat}</span>
+                  <span>LNG: {geofenceLng}</span>
+                  <span>RAD: {geofenceRadius}m</span>
+                </div>
+
+                {/* Academy reference badge overlay */}
+                <div className="absolute top-3 right-3 bg-navy/90 backdrop-blur px-3 py-1.5 rounded-lg text-[9px] font-extrabold text-gold uppercase tracking-wider shadow">
+                  Parul University Campus
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-100 text-[11.5px] text-slate-450 font-semibold leading-relaxed">
+              * The mobile parent app utilizes these coordinates to calculate the student's relative distance. Attendance logs are marked as <span className="text-navy font-bold">geofence_verified</span> when check-in events occur within the designated perimeter.
+            </div>
+          </div>
         </div>
       )}
 
