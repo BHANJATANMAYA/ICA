@@ -477,12 +477,31 @@ class BillingScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
 
+              // MODULE 4: Biometric gate before purchase
               ElevatedButton.icon(
-                onPressed: () {
-                  Get.back(); // close dialog
-                  controller.purchasePlan(studentId: student.id, plan: plan);
+                onPressed: () async {
+                  Get.back(); // close dialog first
+
+                  // Attempt biometric authentication
+                  final authenticated =
+                      await controller.authenticateBeforePurchase();
+
+                  if (authenticated) {
+                    controller.purchasePlan(
+                        studentId: student.id, plan: plan);
+                  } else {
+                    Get.snackbar(
+                      'Authentication Failed',
+                      'Payment cancelled — biometric verification failed.',
+                      backgroundColor:
+                          AppColors.alertRed.withValues(alpha: 0.1),
+                      colorText: AppColors.alertRed,
+                      icon: const Icon(Icons.fingerprint,
+                          color: AppColors.alertRed),
+                    );
+                  }
                 },
-                icon: const Icon(Icons.check_circle, color: Colors.white),
+                icon: const Icon(Icons.fingerprint, color: Colors.white),
                 label: const Text(
                   'Simulate Success',
                   style: TextStyle(color: Colors.white),

@@ -40,13 +40,34 @@ interface Subscription {
   plans: Plan | null;
 }
 
+interface Payment {
+  id: string;
+  student_id: string;
+  plan_id: string | null;
+  amount: number;
+  status: "pending" | "success" | "failed";
+  gateway_ref: string | null;
+  created_at: string;
+  students: {
+    name: string;
+  } | null;
+  plans: {
+    name: string;
+  } | null;
+}
+
 export default function BillingPage() {
   const supabase = createClient();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [activeTab, setActiveTab] = useState<"subscriptions" | "plans">("subscriptions");
+  const [activeTab, setActiveTab] = useState<"subscriptions" | "plans" | "payments">("subscriptions");
   const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<Payment[]>([]);
+
+  // Payment Filter States
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  const [paymentStudentFilter, setPaymentStudentFilter] = useState("all");
 
   // Modal State
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -90,6 +111,23 @@ export default function BillingPage() {
         .eq("is_deleted", false)
         .order("name", { ascending: true });
       setStudents(studentsData || []);
+
+      // 4. Fetch Payments joined with Student & Plan info
+      const { data: paymentsData } = await supabase
+        .from("payments")
+        .select(`
+          id,
+          student_id,
+          plan_id,
+          amount,
+          status,
+          gateway_ref,
+          created_at,
+          students ( name ),
+          plans ( name )
+        `)
+        .order("created_at", { ascending: false });
+      setPayments((paymentsData as any[]) || []);
     } catch (err) {
       console.error("Error loading billing details:", err);
     } finally {
@@ -216,7 +254,7 @@ export default function BillingPage() {
         </div>
 
         <div>
-          {activeTab === "subscriptions" ? (
+          {activeTab === "subscriptions" && (
             <button
               onClick={() => {
                 setCurrentSub({
@@ -233,7 +271,8 @@ export default function BillingPage() {
               <Plus className="w-4 h-4" strokeWidth={2.5} />
               <span>Add Subscription</span>
             </button>
-          ) : (
+          )}
+          {activeTab === "plans" && (
             <button
               onClick={() => {
                 setCurrentPlan({ name: "", price: 2000, duration_type: "monthly", is_active: true });
@@ -271,6 +310,17 @@ export default function BillingPage() {
         >
           <Layers className="w-4.5 h-4.5" />
           <span>Membership Plans</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("payments")}
+          className={`px-6 py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === "payments"
+              ? "border-gold text-gold font-bold"
+              : "border-transparent text-slate-500 hover:text-navy"
+          }`}
+        >
+          <CreditCard className="w-4.5 h-4.5" />
+          <span>Payment History</span>
         </button>
       </div>
 
@@ -448,6 +498,131 @@ export default function BillingPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* TAB 3: PAYMENT HISTORY */}
+      {activeTab === "payments" && (
+        <div className="space-y-6">
+          {/* Filters Area */}
+          <div className="bg-white p-4 rounded-[12px] border border-slate-100 shadow-sm flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+              {/* Filter Student */}
+              <div className="flex items-center gap-2">
+                <ListFilter className="w-4 h-4 text-slate-400" />
+                <span className="text-xs font-bold text-navy uppercase tracking-wider">Student:</span>
+                <select
+                  value={paymentStudentFilter}
+                  onChange={(e) => setPaymentStudentFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold cursor-pointer"
+                >
+                  <option value="all">All Students</option>
+                  {students.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Status */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-navy uppercase tracking-wider">Status:</span>
+                <select
+                  value={paymentStatusFilter}
+                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="success">Success</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setPaymentStudentFilter("all");
+                setPaymentStatusFilter("all");
+              }}
+              className="text-xs font-bold text-gold hover:underline"
+            >
+              Clear Filters
+            </button>
+          </div>
+
+          {/* Payments Table */}
+          <div className="bg-white rounded-[12px] border border-slate-100 shadow-sm overflow-hidden animate-fadeIn">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-navy text-white text-[12px] font-bold tracking-wider uppercase border-b border-slate-700">
+                    <th className="py-4 px-6">Student Name</th>
+                    <th className="py-4 px-6">Chosen Plan</th>
+                    <th className="py-4 px-6 text-center">Amount Paid</th>
+                    <th className="py-4 px-6">Gateway Reference</th>
+                    <th className="py-4 px-6 text-center">Payment Status</th>
+                    <th className="py-4 px-6 text-right">Payment Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-[13px] font-semibold text-slate-700">
+                  {(() => {
+                    const filteredPayments = payments.filter((p) => {
+                      if (paymentStudentFilter !== "all" && p.student_id !== paymentStudentFilter) return false;
+                      if (paymentStatusFilter !== "all" && p.status !== paymentStatusFilter) return false;
+                      return true;
+                    });
+
+                    if (filteredPayments.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-slate-450 font-medium">
+                            No payment transactions found matching these filters.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filteredPayments.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="py-4 px-6 font-bold text-navy">
+                          {p.students?.name || "Deleted Student"}
+                        </td>
+                        <td className="py-4 px-6 text-slate-650">
+                          {p.plans?.name || "Custom Plan / Single Charge"}
+                        </td>
+                        <td className="py-4 px-6 text-center font-extrabold text-slate-800">
+                          ₹{p.amount.toLocaleString("en-IN")}
+                        </td>
+                        <td className="py-4 px-6 font-mono text-xs text-slate-500">
+                          {p.gateway_ref || "N/A"}
+                        </td>
+                        <td className="py-4 px-6 text-center">
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                            p.status === "success" ? "bg-emerald-100 text-success" :
+                            p.status === "failed" ? "bg-rose-100 text-destructive" :
+                            "bg-slate-150 text-slate-500"
+                          }`}>
+                            {p.status === "success" && <CheckCircle2 className="w-3 h-3" />}
+                            {p.status === "failed" && <XCircle className="w-3 h-3" />}
+                            {p.status === "pending" && <Clock className="w-3 h-3" />}
+                            <span>{p.status}</span>
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-right text-slate-500 text-xs font-semibold">
+                          <span className="block">{new Date(p.created_at).toLocaleDateString()}</span>
+                          <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+                            {new Date(p.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
